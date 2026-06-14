@@ -1,0 +1,6 @@
+{
+  "name": "خدماتي",
+  "description": "منصة وتطبيق خدماتي للتوصيل والربط بين مقدمي الخدمات والعملاء في موريتانيا، تشمل الكهرباء، السباكة، البناء، التدريس، والبرمجة وغيرها بلمسة عصرية وتصميم فاخر ومبسط.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

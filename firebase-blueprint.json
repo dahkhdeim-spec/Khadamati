@@ -1,0 +1,170 @@
+{
+  "entities": {
+    "location": {
+      "title": "LocationData",
+      "description": "Geographical location representation",
+      "type": "object",
+      "properties": {
+        "latitude": { "type": "number", "description": "Latitude coordinate" },
+        "longitude": { "type": "number", "description": "Longitude coordinate" },
+        "name": { "type": "string", "description": "Address display name" }
+      },
+      "required": ["latitude", "longitude", "name"]
+    },
+    "user": {
+      "title": "UserProfile",
+      "description": "User account schema (customers, providers, admins)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string", "enum": ["customer", "provider", "admin"] },
+        "avatarUrl": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "bio": { "type": "string" },
+        "experience": { "type": "string" },
+        "category": { "type": "string" },
+        "rating": { "type": "number" },
+        "reviewsCount": { "type": "number" },
+        "earnings": { "type": "number" },
+        "isVerified": { "type": "boolean" },
+        "location": { "$ref": "#/entities/location" },
+        "skills": { "type": "array", "description": "List of provider skills" }
+      },
+      "required": ["id", "name", "email", "phone", "role", "avatarUrl", "createdAt"]
+    },
+    "request": {
+      "title": "ServiceRequest",
+      "description": "Booking request from customer to a provider",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "providerId": { "type": "string" },
+        "providerName": { "type": "string" },
+        "category": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "completed", "cancelled"] },
+        "price": { "type": "number" },
+        "commission": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "location": { "$ref": "#/entities/location" },
+        "rating": { "type": "number" },
+        "reviewText": { "type": "string" }
+      },
+      "required": ["id", "customerId", "customerName", "providerId", "providerName", "category", "title", "description", "status", "price", "commission", "createdAt", "updatedAt", "location"]
+    },
+    "chatThread": {
+      "title": "ChatThread",
+      "description": "Conversation thread between customer and provider",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerAvatar": { "type": "string" },
+        "providerId": { "type": "string" },
+        "providerName": { "type": "string" },
+        "providerAvatar": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "lastMessageTime": { "type": "string" },
+        "unreadCount": { "type": "number" }
+      },
+      "required": ["id", "customerId", "customerName", "customerAvatar", "providerId", "providerName", "providerAvatar", "lastMessage", "lastMessageTime"]
+    },
+    "chatMessage": {
+      "title": "ChatMessage",
+      "description": "Single chat message inside a chat thread",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "senderId", "senderName", "text", "timestamp"]
+    },
+    "complaint": {
+      "title": "Complaint",
+      "description": "User complaints system handled by admins",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "requestId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "resolved"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "userName", "title", "description", "status", "createdAt"]
+    },
+    "adBanner": {
+      "title": "AdBanner",
+      "description": "Marketing and announcement sliders handled by admins",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "link": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "imageUrl", "isActive", "createdAt"]
+    },
+    "notification": {
+      "title": "AppNotification",
+      "description": "System, booking or chat alert notification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "type": { "type": "string", "enum": ["request", "chat", "system"] },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "link": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "body", "type", "isRead", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "#/entities/user",
+      "description": "Stores user profiles including public/private details and provider statistics"
+    },
+    "requests/{requestId}": {
+      "schema": "#/entities/request",
+      "description": "Stores transaction and booking requests"
+    },
+    "chats/{chatId}": {
+      "schema": "#/entities/chatThread",
+      "description": "Stores active customer-provider chat metadata"
+    },
+    "chats/{chatId}/messages/{messageId}": {
+      "schema": "#/entities/chatMessage",
+      "description": "Stores historical messages in a secure thread"
+    },
+    "complaints/{complaintId}": {
+      "schema": "#/entities/complaint",
+      "description": "A collection of user reports/complaints for admins to review"
+    },
+    "ads/{adId}": {
+      "schema": "#/entities/adBanner",
+      "description": "Managed advertisement and promotion slides"
+    },
+    "notifications/{notificationId}": {
+      "schema": "#/entities/notification",
+      "description": "In-app system or activity logs"
+    }
+  }
+}

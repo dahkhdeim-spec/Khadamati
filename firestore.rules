@@ -1,0 +1,321 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny catch-all safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Global Helper Primitives & Utilities
+    // -------------------------------------------------------------------------
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && (
+        request.auth.token.email_verified == true || 
+        request.auth.token.email == "dahkhdeim@gmail.com"
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == "dahkhdeim@gmail.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin")
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity Schema Validation Helpers
+    // -------------------------------------------------------------------------
+
+    function isValidUser(data) {
+      return data.id is string && isValidId(data.id) &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+        data.email is string && data.email.size() <= 100 &&
+        data.phone is string && data.phone.size() <= 20 &&
+        data.role is string && (data.role == "customer" || data.role == "provider" || data.role == "admin") &&
+        data.avatarUrl is string && data.avatarUrl.size() <= 500 &&
+        data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    function isValidRequest(data) {
+      return data.id is string && isValidId(data.id) &&
+        data.customerId is string && isValidId(data.customerId) &&
+        data.customerName is string && data.customerName.size() <= 100 &&
+        data.providerId is string && isValidId(data.providerId) &&
+        data.providerName is string && data.providerName.size() <= 100 &&
+        data.category is string && data.category.size() <= 50 &&
+        data.title is string && data.title.size() <= 100 &&
+        data.description is string && data.description.size() <= 2000 &&
+        data.status is string && (data.status == "pending" || data.status == "accepted" || data.status == "rejected" || data.status == "completed" || data.status == "cancelled") &&
+        data.price is number && data.price >= 0 &&
+        data.commission is number && data.commission >= 0 &&
+        data.createdAt is string && data.createdAt.size() <= 50 &&
+        data.updatedAt is string && data.updatedAt.size() <= 50;
+    }
+
+    function isValidChatThread(data) {
+      return data.id is string && isValidId(data.id) &&
+        data.customerId is string && isValidId(data.customerId) &&
+        data.customerName is string && data.customerName.size() <= 100 &&
+        data.customerAvatar is string && data.customerAvatar.size() <= 500 &&
+        data.providerId is string && isValidId(data.providerId) &&
+        data.providerName is string && data.providerName.size() <= 100 &&
+        data.providerAvatar is string && data.providerAvatar.size() <= 500 &&
+        data.lastMessage is string && data.lastMessage.size() <= 1000 &&
+        data.lastMessageTime is string && data.lastMessageTime.size() <= 50;
+    }
+
+    function isValidChatMessage(data) {
+      return data.id is string && isValidId(data.id) &&
+        data.senderId is string && isValidId(data.senderId) &&
+        data.senderName is string && data.senderName.size() <= 100 &&
+        data.text is string && data.text.size() <= 1000 &&
+        data.timestamp is string && data.timestamp.size() <= 50;
+    }
+
+    function isValidComplaint(data) {
+      return data.id is string && isValidId(data.id) &&
+        data.userId is string && isValidId(data.userId) &&
+        data.userName is string && data.userName.size() <= 100 &&
+        data.title is string && data.title.size() <= 100 &&
+        data.description is string && data.description.size() <= 2000 &&
+        data.status is string && (data.status == "pending" || data.status == "resolved") &&
+        data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    function isValidAdBanner(data) {
+      return data.id is string && isValidId(data.id) &&
+        data.title is string && data.title.size() <= 200 &&
+        data.imageUrl is string && data.imageUrl.size() <= 1000 &&
+        data.isActive is bool &&
+        data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    function isValidNotification(data) {
+      return data.id is string && isValidId(data.id) &&
+        data.userId is string && isValidId(data.userId) &&
+        data.title is string && data.title.size() <= 150 &&
+        data.body is string && data.body.size() <= 1000 &&
+        data.type is string && (data.type == "request" || data.type == "chat" || data.type == "system") &&
+        data.isRead is bool &&
+        data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection match rules
+    // -------------------------------------------------------------------------
+
+    // 1. Users Profiles
+    match /users/{userId} {
+      allow read: if isSignedIn() || resource.data.role == "provider";
+      allow create: if isEmailVerified() && isOwner(userId) && isValidUser(incoming()) && (
+        // Forbid user from self-promoting to admin or verifying status
+        incoming().role != "admin" &&
+        incoming().isVerified == false
+      );
+      allow update: if isEmailVerified() && (
+        // Admin overrides
+        isAdmin() ||
+        (
+          isOwner(userId) && 
+          isValidUser(incoming()) &&
+          // Prevent standard users from self-promoting, verifying themselves, or tampering with historical fields
+          incoming().role == existing().role &&
+          incoming().createdAt == existing().createdAt &&
+          (existing().role == "admin" || incoming().role != "admin") &&
+          (!existing().keys().hasAll(["isVerified"]) || incoming().isVerified == existing().isVerified) &&
+          (!existing().keys().hasAll(["earnings"]) || incoming().earnings == existing().earnings)
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    // 2. Service Requests / Orders
+    match /requests/{requestId} {
+      allow get: if isSignedIn() && (
+        isOwner(existing().customerId) || 
+        isOwner(existing().providerId) || 
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid || 
+        resource.data.providerId == request.auth.uid || 
+        isAdmin()
+      );
+
+      allow create: if isEmailVerified() && 
+        isValidRequest(incoming()) &&
+        isValidId(requestId) &&
+        isOwner(incoming().customerId) &&
+        incoming().status == "pending" &&
+        exists(/databases/$(database)/documents/users/$(incoming().providerId));
+
+      allow update: if isEmailVerified() && 
+        isValidRequest(incoming()) && (
+          isAdmin() ||
+          (
+            // Immutable field guards during updates
+            incoming().id == existing().id &&
+            incoming().customerId == existing().customerId &&
+            incoming().providerId == existing().providerId &&
+            incoming().price == existing().price &&
+            incoming().commission == existing().commission &&
+            incoming().createdAt == existing().createdAt &&
+
+            // Terminal state locking: Completed, rejected, or cancelled requests can't be updated further
+            existing().status != "completed" &&
+            existing().status != "rejected" &&
+            existing().status != "cancelled" &&
+
+            (
+              // Action: Customer cancels request
+              (isOwner(existing().customerId) && 
+               incoming().status == "cancelled" && 
+               incoming().diff(existing()).affectedKeys().hasOnly(["status", "updatedAt"])) ||
+
+              // Action: Provider accepts/rejects a pending request
+              (isOwner(existing().providerId) && 
+               existing().status == "pending" && 
+               (incoming().status == "accepted" || incoming().status == "rejected") && 
+               incoming().diff(existing()).affectedKeys().hasOnly(["status", "updatedAt"])) ||
+
+              // Action: Provider completes an accepted request
+              (isOwner(existing().providerId) && 
+               existing().status == "accepted" && 
+               incoming().status == "completed" && 
+               incoming().diff(existing()).affectedKeys().hasOnly(["status", "updatedAt"])) ||
+
+              // Action: Customer leaves rating/review on completed requests (special bypass for terminal check)
+              (isOwner(existing().customerId) && 
+               existing().status == "completed" && 
+               incoming().status == "completed" && 
+               incoming().diff(existing()).affectedKeys().hasOnly(["rating", "reviewText", "updatedAt"]) &&
+               incoming().rating >= 1 && incoming().rating <= 5)
+            )
+          )
+        );
+      allow delete: if isAdmin();
+    }
+
+    // 3. Chat Threads
+    match /chats/{chatId} {
+      allow read: if isSignedIn() && (
+        isOwner(existing().customerId) || 
+        isOwner(existing().providerId) || 
+        isAdmin()
+      );
+      
+      allow create: if isEmailVerified() && 
+        isValidChatThread(incoming()) && 
+        isValidId(chatId) && (
+          isOwner(incoming().customerId) || 
+          isOwner(incoming().providerId)
+        ) && 
+        exists(/databases/$(database)/documents/users/$(incoming().customerId)) &&
+        exists(/databases/$(database)/documents/users/$(incoming().providerId));
+
+      allow update: if isEmailVerified() && 
+        isValidChatThread(incoming()) && (
+          isAdmin() || (
+            (isOwner(existing().customerId) || isOwner(existing().providerId)) &&
+            // Lock immutable references
+            incoming().id == existing().id &&
+            incoming().customerId == existing().customerId &&
+            incoming().providerId == existing().providerId &&
+            incoming().diff(existing()).affectedKeys().hasAny(["lastMessage", "lastMessageTime", "unreadCount"])
+          )
+        );
+
+      allow delete: if isAdmin();
+
+      // Subcollection for Chat Messages
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && (
+          isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.customerId) || 
+          isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.providerId) || 
+          isAdmin()
+        );
+
+        allow create: if isEmailVerified() && 
+          isValidChatMessage(incoming()) && 
+          isValidId(messageId) && (
+            isOwner(incoming().senderId) &&
+            // Master Gate relational access: must be part of the chat thread to message
+            (isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.customerId) || 
+             isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.providerId))
+          );
+
+        allow update: if false; // Messages are immutable once sent!
+        allow delete: if isAdmin();
+      }
+    }
+
+    // 4. Complaints
+    match /complaints/{complaintId} {
+      allow read: if isSignedIn() && (isOwner(existing().userId) || isAdmin());
+      allow create: if isEmailVerified() && 
+        isValidComplaint(incoming()) && 
+        isValidId(complaintId) && 
+        isOwner(incoming().userId) &&
+        incoming().status == "pending";
+
+      allow update: if isEmailVerified() && isAdmin() && 
+        isValidComplaint(incoming()) && 
+        incoming().diff(existing()).affectedKeys().hasOnly(["status"]);
+
+      allow delete: if isAdmin();
+    }
+
+    // 5. Ads / Promotions
+    match /ads/{adId} {
+      allow read: if true; // Public access
+      allow write: if isEmailVerified() && isAdmin() && isValidAdBanner(incoming()) && isValidId(adId);
+    }
+
+    // 6. Notifications
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && (isOwner(existing().userId) || isAdmin());
+      allow create: if isEmailVerified() && 
+        isValidNotification(incoming()) && 
+        isValidId(notificationId) && (
+          // Allow creating notifications for other users (e.g. Chat alerts or request alerts)
+          isOwner(incoming().userId) || 
+          exists(/databases/$(database)/documents/users/$(incoming().userId))
+        );
+
+      allow update: if isEmailVerified() && 
+        isValidNotification(incoming()) && (
+          isAdmin() || (
+            isOwner(existing().userId) && 
+            incoming().diff(existing()).affectedKeys().hasOnly(["isRead"])
+          )
+        );
+
+      allow delete: if isSignedIn() && (isOwner(existing().userId) || isAdmin());
+    }
+
+  }
+}
